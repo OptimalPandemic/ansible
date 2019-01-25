@@ -264,11 +264,23 @@ def main():
         else:
             # set default params for lists which can't be done in the argument_spec
             if module.params.get('vlans_list'):
-                for vlan in module.params['vlans_list']:
+                vlan_dns = []
+                vlan_list = module.params.get('vlans_list')
+                int_dns = []
+                for vlan in vlan_list:
+                    # Populate list of VLAN and interface DNs to query
+                    vlan_dns.append("fabric/lan/net-" + str(vlan['name']))
+                    int_dns.append(dn + '/if-' + str(vlan['name']))
+
                     if not vlan.get('native'):
                         vlan['native'] = 'no'
                     if not vlan.get('state'):
                         vlan['state'] = 'present'
+
+                # Query vlans and interfaces
+                vlans = ucs.login_handle.query_dns(vlan_dns)
+                ints = ucs.login_handle.query_dns(int_dns)
+
             # for target 'adapter', change to internal UCS Manager spelling 'adaptor'
             if module.params['target'] == 'adapter':
                 module.params['target'] = 'adaptor'
@@ -296,9 +308,9 @@ def main():
                         props_match = True
                     else:
                         # check vlan props
-                        for vlan in module.params['vlans_list']:
-                            child_dn = dn + '/if-' + str(vlan['name'])
-                            mo_1 = ucs.login_handle.query_dn(child_dn)
+                        i = 0
+                        for vlan in vlan_list:
+                            mo_1 = int_dns[i]
                             if vlan['state'] == 'absent':
                                 if mo_1:
                                     props_match = False
@@ -311,6 +323,8 @@ def main():
                                 else:
                                     props_match = False
                                     break
+                            i += 1
+                        i = 0
 
             if not props_match:
                 if not module.check_mode:
@@ -347,10 +361,10 @@ def main():
                         )
 
                     if module.params.get('vlans_list'):
+                        i = 0
                         for vlan in module.params['vlans_list']:
                             if vlan['state'] == 'absent':
-                                child_dn = dn + '/if-' + str(vlan['name'])
-                                mo_1 = ucs.login_handle.query_dn(child_dn)
+                                mo_1 = int_dns[i]
                                 ucs.login_handle.remove_mo(mo_1)
                             else:
                                 mo_1 = VnicEtherIf(
@@ -358,6 +372,7 @@ def main():
                                     name=str(vlan['name']),
                                     default_net=vlan['native'],
                                 )
+                            i += 1
 
                     ucs.login_handle.add_mo(mo, True)
                     ucs.login_handle.commit()
